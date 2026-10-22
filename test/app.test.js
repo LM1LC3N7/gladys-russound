@@ -627,3 +627,33 @@ test('review 1, M6: the queue of a zone is bounded', async (t) => {
     results.join(),
   );
 });
+
+// --- Review 2 -------------------------------------------------------------------------
+
+test('review 2, N1: an unreadable volume never lets the unmute decide on memory', async (t) => {
+  const ctx = await setup(t);
+  const kitchen = await createZone(ctx, 1);
+  ctx.fake.set('C[1].Z[1].mute', 'ON');
+  await settle(30);
+  // The volume is now 45, but its answer is unreadable (no push: memory says 20).
+  ctx.fake.values['C[1].Z[1].volume'] = '45\t';
+  await assert.rejects(set(ctx, kitchen, 1, 'mute'), /volume unknown, nothing sent/);
+  assert.deepEqual(ctx.fake.events(), []);
+});
+
+test('review 2, N1b: an unreadable mute state refuses, nothing sent', async (t) => {
+  const ctx = await setup(t);
+  const kitchen = await createZone(ctx, 1);
+  ctx.fake.values['C[1].Z[1].mute'] = 'ON\t';
+  await assert.rejects(set(ctx, kitchen, 1, 'mute'), /mute state unknown, nothing sent/);
+  assert.deepEqual(ctx.fake.events(), []);
+});
+
+test('review 2: an unreadable read back never confirms a command', async (t) => {
+  const ctx = await setup(t);
+  const kitchen = await createZone(ctx, 1);
+  ctx.fake.ignore.add('SelectSource');
+  // The source is already 2 in memory, but its read back is unreadable.
+  ctx.fake.values['C[1].Z[1].currentSource'] = '2\t';
+  await assert.rejects(set(ctx, kitchen, 1, 'source', '2'), /without confirmation/);
+});

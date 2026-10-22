@@ -404,7 +404,13 @@ export class RioLink {
         this.desync('unreadable answer');
         return;
       }
-      message = { type: 'S', branch: request.path, leaf: request.leaf, value: null };
+      message = {
+        type: 'S',
+        branch: request.path,
+        leaf: request.leaf,
+        value: null,
+        unreadable: true,
+      };
       this.end(message);
       return;
     }
@@ -642,8 +648,17 @@ export class RioLink {
   }
 
   /** `GET` of a zone leaf; resolves with the parsed value now in the state. */
+  /**
+   * `GET` of a zone leaf; resolves with the parsed value now in the state,
+   * or undefined when the answer was unreadable: the value in memory never
+   * stands for a read (review 2, R2-1), so a decision refuses and a
+   * confirmation fails.
+   */
   async readZone(c, z, leaf, timeoutMs) {
-    await this.get(zonePath(c, z), leaf, timeoutMs);
+    const message = await this.exchange(getRequest(zonePath(c, z), leaf), timeoutMs);
+    if (message.unreadable) {
+      return undefined;
+    }
     return this.state.zones[`${c}.${z}`]?.[leaf];
   }
 
