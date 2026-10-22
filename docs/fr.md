@@ -1,67 +1,135 @@
-# Template de démonstration
+# Russound pour Gladys
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Pilotez depuis Gladys chaque **zone** de vos contrôleurs multiroom
+**Russound** dotés du protocole RIO sur leur port réseau (MCA-66, MCA-88,
+MCA-88X, MCA-C3, MCA-C5, MBX-PRE, MBX-AMP…), en local, sans aucun cloud :
+allumage, veille, volume (plafonné), sourdine, source et lecture en cours.
 
-## Ce que vous obtenez
+> **Important.** Cette intégration n'a jamais été testée avec un vrai
+> appareil : elle a été écrite à partir de la bibliothèque `aiorussound`
+> (celle qu'utilise Home Assistant) et testée avec un faux contrôleur
+> seulement. Vos retours sont les bienvenus. Intégration non officielle, sans
+> lien avec Russound.
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+## Installation
 
-## Configuration
+1. Branchez le contrôleur sur votre réseau et donnez-lui une **adresse IP
+   fixe** dans votre box (bail DHCP réservé).
+2. Dans Gladys, installez l'intégration **Russound**, puis ouvrez sa
+   configuration.
+3. Saisissez les adresses IP des contrôleurs, séparées par des virgules (par
+   exemple `192.168.1.40`). Le port RIO est le 9621 ; pour un autre,
+   ajoutez-le : `192.168.1.40:9622`. Une seule adresse suffit pour des
+   contrôleurs chaînés en RNET derrière le premier.
+4. Choisissez le **plafond de volume** (25 sur 50 par défaut).
+5. Les zones apparaissent dans l'onglet **Découverte** (une par zone
+   nommée) : créez celles que vous voulez.
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+L'intégration garde une connexion ouverte avec chaque contrôleur et suit
+chaque zone et chaque source : ce qui est changé sur un clavier, une
+télécommande ou l'application s'affiche aussitôt dans Gladys. Les zones sont
+aussi relues chaque minute.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+Seul le port réseau est pris en charge : le **port série RS-232** ne l'est
+pas (une intégration Gladys tourne dans un conteneur sans accès au port
+série), pas plus que le protocole RNET seul des anciens modèles (CAV, CAM)
+sans port RIO.
 
-## Actions
+## Ce que vous obtenez, pour chaque zone
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+| Fonction         | Type Gladys                    | Remarque                                                  |
+| ---------------- | ------------------------------ | --------------------------------------------------------- |
+| Marche           | état binaire (lecture seule)   | 1 zone allumée, 0 éteinte ou contrôleur injoignable       |
+| Allumer          | bouton                         | `ZoneOn`                                                  |
+| Veille           | bouton                         | `ZoneOff`                                                 |
+| Volume           | musique / volume (0 à 100)     | 100 % = le plafond                                        |
+| Sourdine         | bouton (télévision / sourdine) | chaque appui lit l'état, puis règle l'inverse             |
+| Source           | liste déroulante               | les sources nommées du contrôleur                         |
+| Lecture en cours | texte (lecture seule)          | « artiste - titre », ou la station ; vide si zone éteinte |
 
-## Scènes
+Volontairement, aucun **interrupteur** : un « éteins tout » ou « allume
+tout » d'un assistant vocal ou d'une scène n'allume ni n'éteint vos zones.
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+## Plafond de volume
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+Les contrôleurs Russound comptent le volume de 0 à 50. Dans Gladys, le volume
+va de 0 à 100 % : 100 % est le **plafond** de la configuration (25 par
+défaut). Gladys (tableau de bord, scène, assistant vocal) ne peut jamais
+régler un volume au-dessus du plafond. Le plafond est relu juste avant
+l'envoi : une nouvelle valeur enregistrée s'applique aussitôt.
 
-## Tableau de bord
+Le volume réglé sur un clavier ou une télécommande n'est pas modifié par
+l'intégration (au-dessus du plafond, Gladys affiche 100 %), sauf dans les deux
+cas où Gladys le rendrait audible :
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+- **Retrait de la sourdine** : si le volume de la zone dépasse le plafond, il
+  est d'abord ramené au plafond, puis la sourdine est retirée. Si le volume ne
+  peut pas être lu, rien n'est envoyé ; si le contrôleur ne confirme pas la
+  baisse, la sourdine est gardée.
+- **Allumage** : une zone s'allume à son « volume d'allumage » ; s'il dépasse
+  le plafond, il y est ramené, jusqu'à ce que le contrôleur confirme un volume
+  au plafond ou en dessous. Si la zone tarde, l'intégration vérifie encore
+  quelques fois pendant environ 15 secondes, et baisse un volume signalé
+  au-dessus du plafond pendant ce temps.
 
-## Dépannage
+## Commandes
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+Une commande n'est réussie que si la valeur relue sur le contrôleur est celle
+demandée. Chaque commande reçoit une réponse en moins de 4 secondes (Gladys
+attend 5 secondes). Une commande partie sans confirmation est signalée
+« envoyée, sans confirmation » ; une commande qui n'a pas pu partir est
+signalée « rien n'a été envoyé ».
+
+La **veille** passe avant toutes les commandes en attente, annule un allumage
+encore en attente, et reste possible juste après un redémarrage, avant la
+première lecture complète : si la connexion attend son prochain essai, elle
+est ouverte aussitôt. Une veille non confirmée est relue et renvoyée jusqu'à
+trois fois, sauf si un allumage est demandé entre-temps.
+
+La **sourdine** utilise les commandes explicites `ZoneMuteOn` / `ZoneMuteOff`
+(RIO 1.09.00 ou plus récent) ; sur un micrologiciel plus ancien, qui ne sait
+que basculer la sourdine, elle est refusée sans rien envoyer.
+
+## Identité des zones
+
+Chaque zone est reconnue par l'adresse du contrôleur, le numéro du contrôleur
+et celui de la zone (par exemple `192.168.1.40_c1_z3`) : gardez une adresse
+IP fixe. L'adresse MAC du contrôleur, quand il la donne, est retenue : si un
+autre contrôleur répond un jour à cette adresse (échange DHCP), ses zones ne
+sont ni lues ni commandées et le statut le signale. Si vous avez remplacé le
+contrôleur, retirez son adresse de la configuration, supprimez ses zones dans
+Gladys, puis ajoutez-le à nouveau. Une adresse MAC illisible n'est jamais
+prise pour un autre contrôleur.
+
+## Reconnexion
+
+Un contrôleur qui ne répond pas (éteint, débranché) affiche la marche de ses
+zones à 0 et est signalé dans le statut de l'intégration. L'intégration se
+reconnecte après 10 s, puis à intervalles doublés après chaque échec, jusqu'à
+5 minutes ; une question sans réponse ferme la connexion, puis la même
+reconnexion espacée s'applique. L'heure du dernier essai est gardée : un
+redémarrage de l'intégration n'interroge jamais le contrôleur plus vite.
+
+## Bouton de configuration
+
+- **Vérifier les contrôleurs** : la connexion, la version RIO, l'adresse MAC
+  et le nombre de zones de chaque contrôleur, l'état de chaque zone (marche,
+  volume sur 50, sourdine, source), et le plafond en vigueur.
+
+## Données et vie privée
+
+L'intégration ne demande ni compte ni mot de passe : le port RIO n'en a pas.
+Elle garde dans `/data/russound.json` les zones connues (adresse, numéros,
+nom, sources), et pour chaque adresse l'adresse MAC du contrôleur, l'heure du
+dernier essai de connexion et le nombre d'échecs. Rien ne sort de votre
+réseau local.
+
+## Limites connues
+
+- Pas encore de lecture / pause / suivant, de préréglages de tuner, de
+  graves, aigus, balance, loudness, mode fête ni de « ne pas déranger ».
+- La liste des sources ne tient pas compte des sources désactivées pour une
+  zone.
+- Utilité limitée en France, en Belgique et en Suisse : Russound est surtout
+  installé en Amérique du Nord.
+- Jamais testé avec un vrai appareil : les vraies réponses peuvent différer.

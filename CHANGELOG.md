@@ -12,44 +12,41 @@ the notes of the version's GitHub Release.
 
 ### Added
 
-- A working example of scene triggers, scene actions and dashboard widgets
-  (Gladys 5.1.0 or later).
-- `CHANGELOG.md`, rolled by the Release workflow.
-- A GitHub Release for every version, with its changelog section as notes: the
-  Gladys Supervision page links each version to the repository's releases.
-- CI runs the tests on Node 22 and 24, and builds the Docker image.
-- Dependabot keeps the npm dependencies and the GitHub Actions up to date.
-- `SECURITY.md` (how to report a vulnerability) and `CLAUDE.md` (project rules
-  for contributors and coding assistants).
-- Manifest tests: `version` matches `package.json`, `docker_image` is tagged
-  with it, descriptions hold 10 to 100 characters, placeholders are
-  multi-language objects.
-- The latitude and longitude fields show an example value as placeholder.
+- Russound multiroom controllers with the RIO protocol on their network port
+  (TCP 9621 by default), added by IP address, without any cloud; the
+  controllers chained over RNET are found through the first one. The RS-232
+  serial port is not supported.
+- One Gladys device per zone: power state (read only), "Power on" and
+  "Standby" buttons, volume (0 to 100 %, validated strictly, mapped onto 0 to
+  the new `max_volume` option of the Russound 0-50 scale: 100 % is the cap, 25
+  by default, never exceeded), mute (each press reads the mute and sets the
+  opposite), a "Source" dropdown with the names of the controller, and a "Now
+  playing" text.
+- Changes made on a keypad, a remote or the app are pushed to Gladys (WATCH),
+  grouped per zone and under a global budget of 240 states a minute; the
+  zones are also read again every minute.
+- Every command is confirmed by the value read back, answered to Gladys
+  within 4 seconds, or dropped, never sent late.
+- Unmuting lowers a volume above the cap to the cap first (mute kept when the
+  lowering is not confirmed); Power on brings the turn-on volume back to the
+  cap.
+- Standby goes before every command waiting, cancels a Power on still
+  waiting, opens the connection at once when it waits for its next attempt
+  (also right after a restart), and is sent again up to three times when not
+  confirmed.
+- The MAC address of a controller is kept and checked: another controller at
+  the same address is neither read nor commanded, and named in the status.
+- A controller that does not answer shows its zones off and is named in the
+  status; it is connected again after 10 s, then at intervals doubled up to 5
+  minutes; the time of the last attempt is kept in `/data`, so a restart never
+  asks sooner.
+- "Check the controllers" button.
 
-### Changed
+### Security
 
-- Node.js 22 or later is required (Node 20 is end-of-life).
-- Integration SDK 0.15.0. The tests now run against the fake Gladys of the
-  SDK, which refuses the payloads Gladys refuses.
-- The refresh interval is one minute minimum, the fastest Gladys polls a
-  device. The plug's power is only sent when it changes, and every 30
-  minutes otherwise.
+- Commands are built from a closed list (numbers only as arguments); lines are
+  bounded (1024 characters) and parsed once by an anchored expression; only the
+  expected keys are read; an answer out of step closes the connection; the
+  tables of the state and of `/data` have no prototype.
 
-### Fixed
-
-- Gladys refused the devices of the Discovery tab: the weather station and
-  the plug declared their poll frequency in seconds instead of one of the
-  values Gladys accepts, and were never polled. They now poll every minute,
-  and the readings follow the refresh interval of the configuration.
-
-- The release commit no longer fails `npm run format:check`: the Release
-  workflow updates the manifest `version` and `docker_image` in place instead
-  of re-printing the whole file with `jq`.
-- The integration can write to `/data`: the image creates the directory owned
-  by the `node` user, a new Docker volume was owned by root.
-- A sub-container running the integration's own image follows it to the new
-  tag at each release, as well as in the manifest of the build summary: it kept
-  the previous tag, which may not exist on the registry. Sub-containers on a
-  third-party image (a broker, a database...) keep theirs.
-
-[Unreleased]: https://github.com/GladysAssistant/integration-template-js/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-russound/commits/main
