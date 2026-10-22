@@ -102,7 +102,7 @@ test('the state reads only the known leaves, without prototype', () => {
   assert.equal(applyMessage(state, parseLine('N constructor.prototype.volume="3"')), undefined);
   applyMessage(state, parseLine('N C[1].Z[2].status="ON"'));
   applyMessage(state, parseLine('N C[1].Z[2].currentSource="3"'));
-  applyMessage(state, parseLine('N S[3].name="Tuner‮"'));
+  applyMessage(state, parseLine('N S[3].name="Tuner\u202e"'));
   assert.equal(state.zones['1.2'].status, true);
   assert.equal(state.zones['1.2'].currentSource, 3);
   assert.equal(state.sources['3'].name, 'Tuner');

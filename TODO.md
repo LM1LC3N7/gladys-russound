@@ -32,6 +32,9 @@ up to date at the end of every milestone.
   - whether `C[1].macAddress` is answered, and its format;
   - the turn-on volume behaviour (pushed `volume` after `ZoneOn`) and whether
     `KeyPress Volume` is refused (`E`) on a zone off;
+  - whether `SelectSource` and `KeyPress Volume` turn a zone off on (review 1,
+    I3): Source is refused on a zone read off until then; if it does turn the
+    zone on, consider treating it as a Power on with every cap check;
   - whether several clients may be connected at once (the Russound app, a
     keypad bridge, Home Assistant);
   - the rendering on the Gladys dashboard (not checked here): the
@@ -130,11 +133,39 @@ up to date at the end of every milestone.
 - One exchange at a time per connection: RIO answers (`S`, `E`) carry no
   request id, so each answer is checked against the request it ends (a GET
   must be answered with its own key, VERSION with `VERSION`, WATCH and EVENT
-  with a bare `S`). An answer without request or for another key, or a
-  request without answer in time, means the two sides are out of step: the
-  connection is closed and opened again, spaced out (a late answer would be
-  taken for the one of the next request). Keyed answers and pushes are always
-  applied to the state first: they carry the state of the controller.
+  with a bare `S`). An answer without request or for another key means the
+  two sides are out of step: the connection is closed and opened again,
+  spaced out. Keyed answers and pushes are always applied to the state first:
+  they carry the state of the controller.
+- (Review 1, I1) The deadline of the caller and the life of an exchange on the
+  wire are separate: at its deadline the caller gets "sent, without answer"
+  (`sent: true`), but the exchange stays current, orphaned, until
+  `requestTimeout` (1.5 s) at least after its write; its late answer is
+  absorbed (it confirms nothing: a command is only confirmed by a GET read
+  back, matched by key) and the next exchange follows. Only an exchange still
+  unanswered past that ceiling closes the link. A command line (not Standby)
+  is never written with less than `minSendBudget` (400 ms) left: "No time
+  left, nothing sent" before any byte. A burst of volumes keeps the link.
+- (Review 1, M2) An `S` line the strict expression refuses (a control
+  character in a name) answers the current GET with an unreadable value,
+  nothing applied (out of step otherwise); a bare `E` ends the request as
+  refused. No reconnection loop on such a controller.
+- (Review 1, M3) Lines dropped as too long count in the flood guard.
+- (Review 1, I2) Standby cancels the Power on, Source and Volume commands
+  waiting in the zone queue, and every command line but its own gets
+  `shouldSend: standbyAt < started`, so a command already running never
+  writes after a Standby (a mute press included). (M1) A Power on whose
+  `ZoneOn` left before a Standby is answered "sent, without confirmation".
+  (M4) The Standby resend gets `shouldSend` too: a Power on asked while it
+  waits on the connection wins. The reaffirmation can turn off, within its 15
+  s, a zone turned on again from a keypad: wanted (a stop keeps its
+  reaffirmation), documented.
+- (Review 1, I3) Source is sent only on a zone whose status, read just
+  before, is on; otherwise refused, nothing sent (`SelectSource` may turn a
+  zone on at its turn-on volume, without the cap checks). Volume is left
+  allowed: the value sent is already at or under the cap.
+- (Review 1, M6) The queue of a zone holds 8 commands at most ("Too many
+  commands waiting, nothing sent"); Standby never goes through it.
 - Connection: one TCP connection per typed address and per address of a
   created zone, kept across reconnections to Gladys (`connected` only clears
   the status cache, the publication memory and `forgetPublishedStates`, then

@@ -78,13 +78,23 @@ Une commande n'est réussie que si la valeur relue sur le contrôleur est celle
 demandée. Chaque commande reçoit une réponse en moins de 4 secondes (Gladys
 attend 5 secondes). Une commande partie sans confirmation est signalée
 « envoyée, sans confirmation » ; une commande qui n'a pas pu partir est
-signalée « rien n'a été envoyé ».
+signalée « rien n'a été envoyé ». Une rafale de commandes (un curseur de
+volume glissé) ne coupe jamais la connexion : celles qui arrivent trop tard
+sont refusées sans rien envoyer. Huit commandes au plus attendent par zone.
 
-La **veille** passe avant toutes les commandes en attente, annule un allumage
-encore en attente, et reste possible juste après un redémarrage, avant la
-première lecture complète : si la connexion attend son prochain essai, elle
-est ouverte aussitôt. Une veille non confirmée est relue et renvoyée jusqu'à
-trois fois, sauf si un allumage est demandé entre-temps.
+La **source** ne se choisit que sur une zone allumée (relue juste avant) :
+sur une zone éteinte, elle est refusée sans rien envoyer, car choisir une
+source pourrait allumer la zone à son volume d'allumage, sans le plafond.
+Allumez d'abord la zone.
+
+La **veille** passe avant toutes les commandes en attente, annule un
+allumage, une source ou un volume encore en attente (une commande déjà en
+cours n'envoie plus rien après elle), et reste possible juste après un
+redémarrage, avant la première lecture complète : si la connexion attend son
+prochain essai, elle est ouverte aussitôt. Une veille non confirmée est relue
+et renvoyée jusqu'à trois fois en 15 secondes, sauf si un allumage est
+demandé dans Gladys entre-temps ; une zone rallumée au clavier pendant ce
+temps peut donc être éteinte à nouveau.
 
 La **sourdine** utilise les commandes explicites `ZoneMuteOn` / `ZoneMuteOff`
 (RIO 1.09.00 ou plus récent) ; sur un micrologiciel plus ancien, qui ne sait

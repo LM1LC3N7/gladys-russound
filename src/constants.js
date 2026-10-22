@@ -50,6 +50,8 @@ export const TIMINGS = Object.freeze({
    */
   commandBudget: 3_500,
   preRead: 1_500,
+  /** A command line is never written with less than this left of its budget. */
+  minSendBudget: 400,
   /**
    * Reconnection: first after `reconnectBase`, then doubled each time up to
    * `reconnectMax`. The count is only reset by a connection that stayed up
@@ -95,6 +97,8 @@ export const LIMITS = Object.freeze({
   line: 1_024,
   /** Requests waiting for their turn on one connection. */
   pending: 32,
+  /** Commands waiting in the queue of one zone (Standby never waits there). */
+  zoneQueue: 8,
   /** Length of a name (zone, source). */
   name: 64,
   /** Length of the "now playing" text. */

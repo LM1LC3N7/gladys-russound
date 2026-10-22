@@ -42,11 +42,30 @@ the notes of the version's GitHub Release.
   asks sooner.
 - "Check the controllers" button.
 
+### Fixed
+
+- A burst of commands on a slow controller no longer closes the connection:
+  a command line is never written with less than 400 ms left, and an exchange
+  past its deadline waits for its late answer (which confirms nothing) before
+  the next one.
+- Standby also cancels a Source or Volume command waiting, and drops the one
+  waiting on the connection: a zone is never turned on again after it.
+- Source on a zone read off is refused ("turn it on first, nothing sent"): it
+  could turn the zone on at its turn-on volume, above the cap.
+- A Power on overridden by a Standby after it left is reported "sent, without
+  confirmation", never as done.
+- An answer with an unreadable value (a control character in a name) or a
+  bare `E` ends its request instead of a reconnection loop.
+- The Standby resend is dropped when a Power on is asked while it waits.
+- The command queue of a zone is bounded (8).
+
 ### Security
 
 - Commands are built from a closed list (numbers only as arguments); lines are
   bounded (1024 characters) and parsed once by an anchored expression; only the
   expected keys are read; an answer out of step closes the connection; the
   tables of the state and of `/data` have no prototype.
+- Lines dropped as too long count in the flood guard; no bidirectional control
+  character is written as such in the sources (checked by a test).
 
 [Unreleased]: https://github.com/LM1LC3N7/gladys-russound/commits/main

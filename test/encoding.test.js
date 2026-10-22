@@ -13,8 +13,10 @@ import { readFileSync } from 'node:fs';
 
 const MOJIBAKE = /[ÂÃ][\u0080-¿€]|â€/;
 const ENCRYPTED = /chiffr|crypt|encrypt/i;
-// eslint-disable-next-line no-control-regex
-const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
+// Bidirectional overrides too ("Trojan Source", review 1 M5): escapes only in the files.
+const CONTROL =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
 const FILES = [
   'gladys-assistant-integration.json',
   'docs/en.md',
@@ -38,6 +40,11 @@ const SOURCES = [
   'src/russound/link.js',
   'src/russound/protocol.js',
   'test/fixtures/fakeRussound.js',
+  'test/app.test.js',
+  'test/config.test.js',
+  'test/encoding.test.js',
+  'test/manifest.test.js',
+  'test/protocol.test.js',
   'scripts/cover.mjs',
   'Dockerfile',
 ];
@@ -84,6 +91,8 @@ test('the patterns catch what they should', () => {
   assert.match('stocké chiffré', ENCRYPTED);
   assert.match('stored encrypted', ENCRYPTED);
   assert.match('a\u0001b', CONTROL);
+  assert.match('a\u202eb', CONTROL);
+  assert.match('a\u2066b', CONTROL);
   assert.doesNotMatch('a\tb', CONTROL);
 });
 

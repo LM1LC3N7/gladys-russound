@@ -215,6 +215,12 @@ export class RussoundApp {
       queue = { running: false, items: [] };
       this.queues.set(id, queue);
     }
+    if (queue.items.length >= LIMITS.zoneQueue) {
+      // Bounded (review 1, M6); Standby never goes through this queue.
+      return Promise.reject(
+        new DeviceError(ERROR_KINDS.BUDGET, 'Too many commands waiting, nothing sent'),
+      );
+    }
     return new Promise((resolve, reject) => {
       const item = { task, resolve, reject, urgent, key };
       if (urgent) {
@@ -823,7 +829,11 @@ export class RussoundApp {
       this.standbyAt.set(zone.id, started);
       this.wakeWatch.delete(zone.id);
       this.cancelWakeCheck(zone.id);
-      this.cancelQueued(zone.id, FEATURES.POWER_ON, 'Cancelled by Standby, nothing sent');
+      // Source and Volume may turn a zone on again (review 1, I2): cancelled
+      // too; the one already running is stopped by its `shouldSend`.
+      for (const queued of [FEATURES.POWER_ON, FEATURES.SOURCE, FEATURES.VOLUME]) {
+        this.cancelQueued(zone.id, queued, 'Cancelled by Standby, nothing sent');
+      }
       run = this.standby(zone, started, context);
     } else {
       if (key === FEATURES.POWER_ON) {
@@ -884,15 +894,21 @@ export class RussoundApp {
    * Writes one event and waits for the `S` of the controller. A line that
    * may have reached the controller is never reported as "not sent":
    * "sent, without confirmation".
+   *
+   * Every line but Standby's (`priority`) is dropped right before the write
+   * when a Standby was asked after the command (review 1, I2), and is never
+   * written with less than `minSendBudget` left (review 1, I1).
    */
   async send(zone, link, name, arg, started, context, { priority = false, shouldSend } = {}) {
+    const notOverridden = () => (this.standbyAt.get(zone.id) ?? -Infinity) < started;
     try {
       return await link.exchange(
         eventRequest(zone.controller, zone.zone, name, arg),
         this.remaining(started),
         {
           priority,
-          shouldSend,
+          shouldSend: priority ? shouldSend : (shouldSend ?? notOverridden),
+          minRemaining: priority ? 0 : this.timings.minSendBudget,
           onSent: () => {
             context.mayHaveSent = true;
           },
@@ -986,10 +1002,21 @@ export class RussoundApp {
       }
       case FEATURES.MUTE:
         return this.mute(zone, link, started, context);
-      case FEATURES.SOURCE:
+      case FEATURES.SOURCE: {
+        // Selecting a source may turn a zone on, at its turn-on volume,
+        // without any check of the cap (review 1, I3): only on a zone read
+        // on just before.
+        const on = await this.readBefore(zone, link, 'status', 'Zone state', started);
+        if (on !== true) {
+          throw new DeviceError(
+            ERROR_KINDS.REFUSED,
+            `${deviceName(zone)} is off (or its state unknown): turn it on first, nothing sent`,
+          );
+        }
         await this.send(zone, link, 'SelectSource', value, started, context);
         await this.confirm(zone, link, 'currentSource', value, started);
         return undefined;
+      }
       default:
         throw new Error(`Feature "${short(key)}" cannot be commanded`);
     }
@@ -1004,7 +1031,8 @@ export class RussoundApp {
     const alive = () => (this.standbyAt.get(zone.id) ?? -Infinity) < started;
     await this.send(zone, link, 'ZoneOn', undefined, started, context, { shouldSend: alive });
     if (!alive()) {
-      return undefined;
+      // Written, then a Standby came after it: never acked as done (review 1, M1).
+      throw sent(`${NO_CONFIRMATION} (overridden by Standby)`);
     }
     // The zone is asked on: a Standby reaffirmation of before stops.
     this.cancelStandbyCheck(zone.id);
@@ -1168,6 +1196,8 @@ export class RussoundApp {
             await link
               .exchange(eventRequest(zone.controller, zone.zone, 'ZoneOff'), this.timings.preRead, {
                 priority: true,
+                // A Power on asked while it waits on the connection wins (review 1, M4).
+                shouldSend: current,
               })
               .catch(() => {});
           }

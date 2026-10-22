@@ -356,7 +356,14 @@ export class RioLink {
       if (this.socket !== socket) {
         return;
       }
-      for (const line of splitter.push(chunk.toString('latin1'))) {
+      const lines = splitter.push(chunk.toString('latin1'));
+      // Lines dropped as too long count in the flood guard too (review 1, M3).
+      for (let i = splitter.takeDropped(); i > 0; i -= 1) {
+        if (this.socket !== socket || socket.destroyed || !this.countLine()) {
+          return;
+        }
+      }
+      for (const line of lines) {
         if (this.socket !== socket || socket.destroyed) {
           return;
         }
@@ -380,18 +387,25 @@ export class RioLink {
    * lines in 10 s) closes the connection; every line under it is decoded.
    */
   receive(text) {
-    const now = this.now();
-    this.lines.push(now);
-    while (this.lines.length > 0 && now - this.lines[0] > this.timings.floodWindow) {
-      this.lines.shift();
-    }
-    if (this.lines.length > this.timings.floodLines) {
-      this.lines = [];
-      this.desync('too many lines');
+    if (!this.countLine()) {
       return;
     }
     let message = parseLine(text);
     if (!message) {
+      return;
+    }
+    if (message.unreadable) {
+      // An `S` line the strict expression refuses (a control character in a
+      // name...): while a GET is current, it is its answer, with an
+      // unreadable value, nothing applied (review 1, M2); otherwise out of
+      // step.
+      const request = this.current?.request;
+      if (request?.kind !== 'get') {
+        this.desync('unreadable answer');
+        return;
+      }
+      message = { type: 'S', branch: request.path, leaf: request.leaf, value: null };
+      this.end(message);
       return;
     }
     if (
@@ -416,20 +430,44 @@ export class RioLink {
         this.desync('answer to another request');
         return;
       }
-      this.current = undefined;
-      this.timers.clearTimeout(current.timer);
-      if (message.type === 'E') {
-        current.reject(
-          new DeviceError(ERROR_KINDS.REFUSED, `Refused by the controller: ${message.message}`),
-        );
-      } else {
-        current.resolve(message);
-      }
-      this.pump();
+      this.end(message);
     }
     if (change && this.ready) {
       this.onEvent('update', this, change);
     }
+  }
+
+  /**
+   * Counts one line (decoded or dropped as too long) in the flood guard;
+   * false when a real flood closed the connection.
+   */
+  countLine() {
+    const now = this.now();
+    this.lines.push(now);
+    while (this.lines.length > 0 && now - this.lines[0] > this.timings.floodWindow) {
+      this.lines.shift();
+    }
+    if (this.lines.length > this.timings.floodLines) {
+      this.lines = [];
+      this.desync('too many lines');
+      return false;
+    }
+    return true;
+  }
+
+  /** Ends the current exchange with its answer (an orphan's answer is only absorbed). */
+  end(message) {
+    const current = this.current;
+    this.current = undefined;
+    this.timers.clearTimeout(current.timer);
+    if (message.type === 'E') {
+      current.reject(
+        new DeviceError(ERROR_KINDS.REFUSED, `Refused by the controller: ${message.message}`),
+      );
+    } else {
+      current.resolve(message);
+    }
+    this.pump();
   }
 
   /** The connection is gone: the exchange written may have acted, the waiting ones did not. */
@@ -479,7 +517,7 @@ export class RioLink {
    * Before that, every failure is "nothing sent" (UNREACHABLE, BUDGET);
    * after, TIMEOUT and CLOSED (`sent: true`).
    */
-  exchange(request, timeoutMs, { onSent, shouldSend, priority = false } = {}) {
+  exchange(request, timeoutMs, { onSent, shouldSend, priority = false, minRemaining = 0 } = {}) {
     if (!this.open) {
       return Promise.reject(
         new DeviceError(ERROR_KINDS.UNREACHABLE, 'Not connected: nothing sent'),
@@ -508,6 +546,7 @@ export class RioLink {
         onSent,
         shouldSend,
         priority,
+        minRemaining,
         resolve,
         reject,
       };
@@ -536,6 +575,11 @@ export class RioLink {
         item.reject(new DeviceError(ERROR_KINDS.UNREACHABLE, 'Not connected: nothing sent'));
         continue;
       }
+      if (remaining < item.minRemaining) {
+        // Too little time for the controller to answer: never written (review 1, I1).
+        item.reject(new DeviceError(ERROR_KINDS.BUDGET, 'No time left: nothing sent'));
+        continue;
+      }
       if (item.shouldSend && !item.shouldSend()) {
         item.reject(new DeviceError(ERROR_KINDS.CANCELLED, 'Cancelled by Standby, nothing sent'));
         continue;
@@ -545,19 +589,39 @@ export class RioLink {
         resolve: item.resolve,
         reject: item.reject,
         timer: undefined,
+        orphan: false,
+      };
+      // The caller's deadline and the life of the exchange on the wire are
+      // two things (review 1, I1): at the deadline the caller gets "sent,
+      // without answer", but the exchange stays the current one, orphaned,
+      // until `requestTimeout` at least after the write. Its late answer is
+      // then absorbed (it confirms nothing: a command is only confirmed by a
+      // GET read back, matched by its key), and the next exchange follows.
+      // Only an exchange still unanswered past that ceiling closes the link.
+      const wireLife = Math.max(remaining, this.timings.requestTimeout);
+      const expire = () => {
+        if (this.current !== entry) {
+          return;
+        }
+        this.current = undefined;
+        // A later answer would be taken for the one of the next request.
+        this.desync('no answer in time');
       };
       entry.timer = this.timers.setTimeout(() => {
         if (this.current !== entry) {
           return;
         }
-        this.current = undefined;
+        entry.orphan = true;
         entry.reject(
           new DeviceError(ERROR_KINDS.TIMEOUT, 'Sent, without answer from the controller', {
             sent: true,
           }),
         );
-        // A late answer would be taken for the one of the next request.
-        this.desync('no answer in time');
+        if (wireLife > remaining) {
+          entry.timer = this.timers.setTimeout(expire, wireLife - remaining);
+        } else {
+          expire();
+        }
       }, remaining);
       this.current = entry;
       try {

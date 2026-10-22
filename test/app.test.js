@@ -288,7 +288,8 @@ test('standby is protective: first, confirmed, and cancels a Power on waiting', 
   await settle(20);
   await set(ctx, device, 1, 'standby');
   assert.match(await powerOn, /Cancelled by Standby, nothing sent/);
-  assert.equal(await mute, 'ok');
+  // The mute press running read its state before the Standby: its line is dropped too.
+  assert.match(await mute, /Cancelled by Standby, nothing sent/);
   assert.ok(ctx.fake.events().includes('EVENT C[1].Z[1]!ZoneOff'));
   assert.ok(!ctx.fake.events().includes('EVENT C[1].Z[1]!ZoneOn'));
   assert.equal(ctx.fake.values['C[1].Z[1].status'], 'OFF');
@@ -477,4 +478,152 @@ test('parseVolumeCommand is strict', () => {
   for (const bad of [null, undefined, '', true, 12.5, '1e2', 101, -1, NaN, '12abc']) {
     assert.equal(parseVolumeCommand(bad), undefined, String(bad));
   }
+});
+
+// --- Review 1 -------------------------------------------------------------------------
+
+const outcome = (promise) =>
+  promise.then(
+    () => 'ok',
+    (err) => err.message,
+  );
+
+test('review 1, I1: a burst of volumes on a slow controller never closes the link', async (t) => {
+  const ctx = await setup(t, { fakeOptions: { delays: { 'EVENT C[1].Z[1]!KeyPress': 150 } } });
+  const kitchen = await createZone(ctx, 1);
+  const patio = await createZone(ctx, 2);
+  const acks = [];
+  for (let v = 10; v <= 100; v += 10) {
+    acks.push(outcome(set(ctx, kitchen, 1, 'volume', v)));
+  }
+  const results = await Promise.all(acks);
+  assert.ok(results.includes('ok'));
+  // Late ones are refused before any byte, or "sent, without confirmation": never a cut link.
+  for (const result of results.filter((r) => r !== 'ok')) {
+    assert.match(result, /nothing sent|without confirmation/);
+  }
+  await settle(400);
+  assert.equal(ctx.fake.connections, 1, 'the link is kept');
+  assert.ok(!ctx.logs.some((l) => /connection closed/.test(l)), ctx.logs.join('\n'));
+  assert.equal(await outcome(set(ctx, patio, 2, 'power_on')), 'ok', 'the other zone answers');
+});
+
+test('review 1, I1: an exchange past its deadline absorbs its late answer', async (t) => {
+  const ctx = await setup(t, { timings: { requestTimeout: 400 } });
+  const kitchen = await createZone(ctx, 1);
+  const link = ctx.app.linkOf(ctx.app.zones[0]);
+  ctx.fake.delays['GET C[1].Z[1].volume'] = 150;
+  await assert.rejects(link.get('C[1].Z[1]', 'volume', 50), /without answer/);
+  // The next exchange waits for the orphan's answer, then gets its own.
+  assert.equal(await link.get('C[1].Z[1]', 'mute', 600), 'OFF');
+  assert.equal(ctx.fake.connections, 1);
+  await set(ctx, kitchen, 1, 'source', '1');
+});
+
+test('review 1, I2: Standby cancels a Source and a Volume waiting, never woken after', async (t) => {
+  const ctx = await setup(t, { fakeOptions: { delays: { 'EVENT C[1].Z[1]!KeyPress': 200 } } });
+  const kitchen = await createZone(ctx, 1);
+  const original = ctx.fake.set.bind(ctx.fake);
+  ctx.fake.set = (key, value) => {
+    original(key, value);
+    if (key.endsWith('.currentSource')) {
+      original(key.replace('currentSource', 'status'), 'ON');
+    }
+  };
+  const volume = outcome(set(ctx, kitchen, 1, 'volume', 40));
+  await settle(20);
+  const source = outcome(set(ctx, kitchen, 1, 'source', '1'));
+  const volume2 = outcome(set(ctx, kitchen, 1, 'volume', 60));
+  await settle(20);
+  await set(ctx, kitchen, 1, 'standby');
+  assert.match(await source, /Cancelled by Standby, nothing sent/);
+  assert.match(await volume2, /Cancelled by Standby, nothing sent/);
+  await volume;
+  await settle(100);
+  const events = ctx.fake.events();
+  assert.ok(!events.some((e) => e.includes('SelectSource')), events.join());
+  assert.equal(events.at(-1), 'EVENT C[1].Z[1]!ZoneOff');
+  assert.equal(ctx.fake.values['C[1].Z[1].status'], 'OFF');
+});
+
+test('review 1, I3: Source on a zone off is refused, nothing sent', async (t) => {
+  const ctx = await setup(t);
+  const patio = await createZone(ctx, 2);
+  await assert.rejects(set(ctx, patio, 2, 'source', '2'), /is off .*nothing sent/);
+  assert.deepEqual(ctx.fake.events(), []);
+});
+
+test('review 1, M1: a Power on overridden by a Standby after it left is never "ok"', async (t) => {
+  const ctx = await setup(t, { fakeOptions: { delays: { 'EVENT C[1].Z[2]!ZoneOn': 150 } } });
+  const patio = await createZone(ctx, 2);
+  const powerOn = outcome(set(ctx, patio, 2, 'power_on'));
+  await settle(40);
+  await set(ctx, patio, 2, 'standby');
+  assert.match(await powerOn, /without confirmation/);
+});
+
+test('review 1, M2: an unreadable answer ends its GET; the other zones are published', async (t) => {
+  const ctx = await setup(t, { fakeOptions: { values: { 'C[1].Z[2].name': 'Pa\ttio' } } });
+  await discovered(ctx, 1);
+  await settle(100);
+  assert.equal(ctx.fake.connections, 1, 'no reconnection loop');
+  assert.ok(!ctx.gladys.fake.discoveredDevices.some((d) => d.external_id === ctx.id(2)));
+});
+
+test('review 1, M2: a bare E ends the request', async (t) => {
+  const ctx = await setup(t);
+  await createZone(ctx, 1);
+  const link = ctx.app.linkOf(ctx.app.zones[0]);
+  ctx.fake.unanswered.add('GET C[1].Z[1].bass');
+  const read = link.get('C[1].Z[1]', 'bass', 1_000);
+  await settle(30);
+  ctx.fake.push('E');
+  await assert.rejects(read, /Refused by the controller: error/);
+  assert.equal(ctx.fake.connections, 1);
+});
+
+test('review 1, M3: a flood of oversized lines closes the link', async (t) => {
+  const ctx = await setup(t, { timings: { floodLines: 100 } });
+  await createZone(ctx, 1);
+  ctx.fake.write(`N C[1].Z[1].name="${'x'.repeat(1_100)}"\r\n`.repeat(500));
+  await waitFor(() => ctx.logs.some((l) => /too many lines/.test(l)), 'the flood guard');
+});
+
+test('review 1, M4: the Standby resend is dropped when a Power on comes while it waits', async (t) => {
+  const ctx = await setup(t, { fakeOptions: { ignore: ['ZoneOff'] } });
+  const kitchen = await createZone(ctx, 1);
+  const zone = ctx.app.zones.find((z) => z.zone === 1);
+  const link = ctx.app.linkOf(zone);
+  ctx.fake.delays['GET C[1].Z[2].volume'] = 150;
+  await assert.rejects(set(ctx, kitchen, 1, 'standby'), /without confirmation/);
+  // The reaffirmation reads the zone (on), then queues ZoneOff: right then, a
+  // poll request is on the wire, and a Power on is asked while ZoneOff waits.
+  const exchange = link.exchange.bind(link);
+  let patched = true;
+  link.exchange = (request, ...rest) => {
+    if (patched && request.kind === 'event' && request.name === 'ZoneOff') {
+      patched = false;
+      link.get('C[1].Z[2]', 'volume', 1_000).catch(() => {});
+      const queued = exchange(request, ...rest);
+      ctx.app.powerOnAt.set(zone.id, Date.now() + 1);
+      return queued;
+    }
+    return exchange(request, ...rest);
+  };
+  await settle(300);
+  assert.equal(ctx.fake.events().filter((e) => e.endsWith('ZoneOff')).length, 1);
+});
+
+test('review 1, M6: the queue of a zone is bounded', async (t) => {
+  const ctx = await setup(t, { fakeOptions: { delays: { 'EVENT C[1].Z[1]!KeyPress': 300 } } });
+  const kitchen = await createZone(ctx, 1);
+  const acks = [];
+  for (let i = 0; i < 12; i += 1) {
+    acks.push(outcome(set(ctx, kitchen, 1, 'volume', i)));
+  }
+  const results = await Promise.all(acks);
+  assert.ok(
+    results.some((r) => /Too many commands waiting, nothing sent/.test(r)),
+    results.join(),
+  );
 });

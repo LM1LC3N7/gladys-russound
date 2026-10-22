@@ -74,13 +74,22 @@ A command succeeds only when the value read back from the controller is the
 one asked. Every command is answered within 4 seconds (Gladys waits 5
 seconds). A command that left without confirmation is reported "sent,
 without confirmation"; a command that could not leave is reported "nothing
-sent".
+sent". A burst of commands (a volume slider dragged) never closes the
+connection: the ones coming too late are refused without sending anything.
+Eight commands at most wait per zone.
 
-**Standby** goes before every command waiting, cancels a Power on still
-waiting, and stays possible right after a restart, before the first full
-read: when the connection waits for its next attempt, it is opened at once.
-A Standby not confirmed is read again and sent again up to three times,
-unless a Power on is asked meanwhile.
+The **source** is only chosen on a zone that is on (read just before): on a
+zone off, it is refused without sending anything, since choosing a source
+could turn the zone on at its turn-on volume, without the cap. Turn the zone
+on first.
+
+**Standby** goes before every command waiting, cancels a Power on, a source
+or a volume still waiting (a command already running sends nothing after
+it), and stays possible right after a restart, before the first full read:
+when the connection waits for its next attempt, it is opened at once. A
+Standby not confirmed is read again and sent again up to three times within
+15 seconds, unless a Power on is asked in Gladys meanwhile; a zone turned on
+again from a keypad during that time may thus be turned off again.
 
 **Mute** uses the explicit `ZoneMuteOn` / `ZoneMuteOff` commands (RIO
 1.09.00 or later); on an older firmware, which can only toggle the mute, it

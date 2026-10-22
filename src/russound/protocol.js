@@ -112,12 +112,17 @@ const KEYED =
  * One line of the controller -> a message, or undefined (ignored):
  * `{ type: 'S' | 'N', branch, leaf, value }` (branch '' for `VERSION`,
  * value null for an empty value or `------`), `{ type: 'S' }` for a bare
- * `S`, `{ type: 'E', message }`.
+ * `S`, `{ type: 'E', message }` (a bare `E` too), and
+ * `{ type: 'S', unreadable: true }` for an `S` line the strict expression
+ * refuses (the link decides what it answers).
  */
 export function parseLine(text) {
   const line = String(text).trim();
   if (line === 'S') {
     return { type: 'S' };
+  }
+  if (line === 'E') {
+    return { type: 'E', message: 'error' };
   }
   const type = line[0];
   if (line[1] !== ' ' || !['S', 'N', 'E'].includes(type)) {
@@ -129,7 +134,7 @@ export function parseLine(text) {
   }
   const match = KEYED.exec(payload);
   if (!match) {
-    return undefined;
+    return type === 'S' ? { type: 'S', unreadable: true } : undefined;
   }
   const value = match[3] === '' || match[3] === '------' ? null : match[3];
   return { type, branch: match[1].slice(0, -1), leaf: match[2], value };
@@ -220,7 +225,7 @@ export const isVersion = (value) => VERSION.test(String(value ?? ''));
 
 // Control characters (C0, DEL, C1) and bidirectional overrides.
 // eslint-disable-next-line no-control-regex
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /** A display text from the controller: cleaned, trimmed, cut; undefined when empty. */
 export function cleanText(value, max = LIMITS.name) {
@@ -363,6 +368,15 @@ export class LineSplitter {
     this.parts = [];
     this.length = 0;
     this.overflow = false;
+    /** Lines dropped as too long since the last `takeDropped()`. */
+    this.dropped = 0;
+  }
+
+  /** The number of lines dropped as too long since the last call (then reset). */
+  takeDropped() {
+    const dropped = this.dropped;
+    this.dropped = 0;
+    return dropped;
   }
 
   /** @returns {string[]} the complete, non-empty lines */
@@ -373,7 +387,9 @@ export class LineSplitter {
       const c = text.charCodeAt(i);
       if (c === 10 || c === 13) {
         this.add(text.slice(start, i));
-        if (!this.overflow) {
+        if (this.overflow) {
+          this.dropped += 1;
+        } else {
           const line = this.parts.join('');
           if (line.trim() !== '') {
             lines.push(line);
