@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-22
+
 ### Added
 
 - Russound multiroom controllers with the RIO protocol on their network port
@@ -68,4 +70,5 @@ the notes of the version's GitHub Release.
 - Lines dropped as too long count in the flood guard; no bidirectional control
   character is written as such in the sources (checked by a test).
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-russound/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-russound/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-russound/releases/tag/v0.1.1

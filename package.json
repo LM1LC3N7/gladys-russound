@@ -1,6 +1,6 @@
 {
   "name": "gladys-russound",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gladys Assistant external integration for Russound multiroom controllers (zones: power, volume capped by an option, mute, source, now playing) over the local RIO protocol. Unofficial, not affiliated with Russound.",
   "type": "module",
