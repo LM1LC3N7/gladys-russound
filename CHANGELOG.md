@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-23
+
 ### Changed
 
 - A duplicate code comment removed in the RIO link; no change in behaviour.
@@ -77,5 +79,6 @@ the notes of the version's GitHub Release.
 - Lines dropped as too long count in the flood guard; no bidirectional control
   character is written as such in the sources (checked by a test).
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-russound/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/LM1LC3N7/gladys-russound/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/LM1LC3N7/gladys-russound/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LM1LC3N7/gladys-russound/releases/tag/v0.1.1
