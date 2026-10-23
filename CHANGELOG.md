@@ -10,6 +10,13 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+### Changed
+
+- A duplicate code comment removed in the RIO link; no change in behaviour.
+  The decision recorded in `TODO.md` for unreadable answers (already in
+  0.1.1: an unreadable value never stands for a read, so nothing is decided
+  or confirmed on it) is now written down.
+
 ## [0.1.1] - 2026-10-22
 
 ### Added

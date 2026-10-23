@@ -647,7 +647,6 @@ export class RioLink {
     return message.value;
   }
 
-  /** `GET` of a zone leaf; resolves with the parsed value now in the state. */
   /**
    * `GET` of a zone leaf; resolves with the parsed value now in the state,
    * or undefined when the answer was unreadable: the value in memory never

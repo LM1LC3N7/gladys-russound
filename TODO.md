@@ -149,7 +149,10 @@ up to date at the end of every milestone.
 - (Review 1, M2) An `S` line the strict expression refuses (a control
   character in a name) answers the current GET with an unreadable value,
   nothing applied (out of step otherwise); a bare `E` ends the request as
-  refused. No reconnection loop on such a controller.
+  refused. No reconnection loop on such a controller. (Review 2, R2-1) The
+  answer keeps its `unreadable` mark: `readZone` then gives undefined, never
+  the value in memory, so a read before a decision refuses ("nothing sent")
+  and a read back never confirms ("sent, without confirmation").
 - (Review 1, M3) Lines dropped as too long count in the flood guard.
 - (Review 1, I2) Standby cancels the Power on, Source and Volume commands
   waiting in the zone queue, and every command line but its own gets
